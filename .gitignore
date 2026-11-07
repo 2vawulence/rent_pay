@@ -1,0 +1,26 @@
+# Dépendances Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Variables d'environnement et secrets
+.env
+.env.local
+.env.*.local
+
+# Fichiers système et éditeurs
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fichiers temporaires et rapports locaux
+*.log
+*.tmp
+.agents/
+security-audit-reports/

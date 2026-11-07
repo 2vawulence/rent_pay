@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self';" />
+  <title>Rent Pay — Gestion Locative, Réparations & Impôts</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- ========= TOP HEADER ========= -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-logo">RP</div>
+        <div>
+          <div class="brand-title-row">
+            <h1 class="brand-title">Rent<span>Pay</span></h1>
+            <span class="brand-pill">Patrimoine & Mobile Money</span>
+          </div>
+          <p class="brand-sub">Loyers par zone, restes à payer, réparations, impôts trimestriels & fins de bail</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div class="period-selector">
+          <label for="global-month">Période</label>
+          <select id="global-month" onchange="onPeriodChange()"></select>
+          <select id="global-year" onchange="onPeriodChange()"></select>
+        </div>
+
+        <div class="owner-actions-group">
+          <button class="btn btn-primary" onclick="openPaymentModal()">Encaisser un loyer</button>
+          <button class="btn btn-secondary" onclick="openTenantModal()">+ Logement</button>
+          <button class="btn btn-secondary" onclick="openRepairModal()">+ Réparation</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========= NAVIGATION ========= -->
+  <nav class="app-nav">
+    <div class="nav-inner">
+      <button class="nav-tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Vue par zone</button>
+      <button class="nav-tab" data-tab="rents" onclick="switchTab('rents')">Loyers & Reste à payer</button>
+      <button class="nav-tab" data-tab="analytics" onclick="switchTab('analytics')">Différences Mois / Année</button>
+      <button class="nav-tab" data-tab="late" onclick="switchTab('late')">
+        Retards <span class="nav-badge" id="nav-late-count">0</span>
+      </button>
+      <button class="nav-tab" data-tab="mobilemoney" onclick="switchTab('mobilemoney')">Mobile Money</button>
+      <button class="nav-tab" data-tab="repairs" onclick="switchTab('repairs')">
+        Réparations <span class="nav-badge" id="nav-repairs-count">0</span>
+      </button>
+      <button class="nav-tab" data-tab="taxes" onclick="switchTab('taxes')">
+        Impôts trimestriels <span class="nav-badge" id="nav-taxes-count">0</span>
+      </button>
+      <button class="nav-tab" data-tab="tenants" onclick="switchTab('tenants')">Logements & Montants des loyers</button>
+    </div>
+  </nav>
+
+  <main class="app-main">
+
+    <!-- ==========================================
+         TAB 1 : VUE PAR ZONE (TABLEAU DE BORD)
+         ========================================== -->
+    <section class="tab-panel active" id="tab-dashboard">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Récapitulatif par Zone — <span id="zone-period-title">—</span></h2>
+            <p class="card-sub">Total à payer, montant payé et reste à payer par zone, avec n° de logement, nom et téléphone du locataire</p>
+          </div>
+          <div class="filter-bar">
+            <select id="zone-mode" class="input-field" onchange="renderZoneRecap(loadDB())">
+              <option value="month">Mois sélectionné</option>
+              <option value="ytd">Cumul de janvier au mois sélectionné</option>
+              <option value="year">Année complète</option>
+            </select>
+            <select id="zone-filter" class="input-field" onchange="renderZoneRecap(loadDB())">
+              <option value="all">Toutes les zones</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>N° Logement</th>
+                <th>Désignation du bien</th>
+                <th>Nom du locataire</th>
+                <th>Téléphone</th>
+                <th class="num">Total à payer</th>
+                <th class="num">Montant payé</th>
+                <th class="num">Reste à payer</th>
+                <th>Statut</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="zone-recap-tbody"></tbody>
+            <tfoot id="zone-recap-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="dashboard-split-even">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Encaissements Mobile Money</h3>
+              <p class="card-sub">Répartition par opérateur sur l'année sélectionnée</p>
+            </div>
+          </div>
+          <div id="dash-mm-list" class="mm-breakdown-list"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title">Alertes</h3>
+              <p class="card-sub">Retards de loyer, impôts en retard, réparations urgentes, fins de bail</p>
+            </div>
+          </div>
+          <div id="dash-alerts-box" class="alerts-list"></div>
+        </div>
+      </div>
+
+      <!-- TOTAUX EN BAS DE PAGE -->
+      <div class="totals-band">
+        <h3 class="totals-title">Totaux</h3>
+        <p class="totals-sub" id="totals-sub">—</p>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label" id="kpi-month-lbl">Total à payer (Mois)</span><span class="kpi-tag">Attendu</span></div>
+            <div class="kpi-value" id="kpi-month-expected">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-active-tenants-sub">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Montant payé (Mois)</span><span class="kpi-tag tag-paid">Perçu</span></div>
+            <div class="kpi-value text-green" id="kpi-month-paid">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-month-rate">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Reste à payer (Mois)</span><span class="kpi-tag tag-amber">Solde</span></div>
+            <div class="kpi-value text-amber" id="kpi-month-remaining">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-month-diff">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label" id="kpi-year-lbl">Encaissé (Année)</span><span class="kpi-tag">Cumul</span></div>
+            <div class="kpi-value" id="kpi-year-paid">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-year-diff">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Réparations à prévoir</span><span class="kpi-tag tag-amber">Travaux</span></div>
+            <div class="kpi-value" id="kpi-repairs">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-repairs-sub">—</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label" id="kpi-taxes-lbl">Impôts reste à payer</span><span class="kpi-tag">Fiscal</span></div>
+            <div class="kpi-value text-red" id="kpi-taxes">0 FCFA</div>
+            <div class="kpi-sub" id="kpi-taxes-sub">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 2 : LOYERS & RESTE À PAYER
+         ========================================== -->
+    <section class="tab-panel" id="tab-rents">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Registre des Loyers — <span id="rents-period-title">—</span></h2>
+            <p class="card-sub">Loyer, date limite, date de paiement, reste à payer et différence pour chaque logement</p>
+          </div>
+          <div class="filter-bar">
+            <input type="text" id="rent-search" class="input-field" placeholder="Rechercher n°, locataire, bien, quartier..." oninput="renderRentsTable()" />
+            <select id="rent-location-filter" class="input-field" onchange="renderRentsTable()">
+              <option value="all">Toutes les zones</option>
+            </select>
+            <select id="rent-status-filter" class="input-field" onchange="renderRentsTable()">
+              <option value="all">Tous les statuts</option>
+              <option value="paid">Payé intégralement</option>
+              <option value="partial">Paiement partiel (Reste > 0)</option>
+              <option value="late">En retard</option>
+              <option value="pending">En attente</option>
+              <option value="stopped">Location arrêtée</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Locataire & Bien</th>
+                <th>Zone</th>
+                <th>Date limite</th>
+                <th>Dernier paiement</th>
+                <th>Mobile Money</th>
+                <th class="num">Loyer</th>
+                <th class="num">Payé</th>
+                <th class="num">Reste à payer</th>
+                <th class="num">Différence</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rents-full-tbody"></tbody>
+            <tfoot id="rents-full-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 3 : DIFFÉRENCES PAR MOIS & PAR AN
+         ========================================== -->
+    <section class="tab-panel" id="tab-analytics">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Détail et Différence par Mois (<span id="analytics-year-label">2026</span>)</h2>
+            <p class="card-sub">Évolution mois par mois des loyers attendus, perçus, restes à payer et différences</p>
+          </div>
+        </div>
+        <div class="monthly-chart-container" id="monthly-bars-chart"></div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Mois</th>
+                <th class="num">Logements actifs</th>
+                <th class="num">Total à payer</th>
+                <th class="num">Montant payé</th>
+                <th class="num">Reste à payer</th>
+                <th class="num">Différence du mois</th>
+                <th class="num">Écart vs mois précédent</th>
+                <th>Progression</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-comparison-tbody"></tbody>
+            <tfoot id="monthly-comparison-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Comparatif et Différence par Année</h2>
+            <p class="card-sub">Total attendu vs encaissé, reste à payer et écart par année</p>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Année</th>
+                <th class="num">Loyers mensuels</th>
+                <th class="num">Total à payer</th>
+                <th class="num">Montant payé</th>
+                <th class="num">Reste à payer</th>
+                <th class="num">Différence annuelle</th>
+                <th>Recouvrement</th>
+              </tr>
+            </thead>
+            <tbody id="yearly-comparison-tbody"></tbody>
+            <tfoot id="yearly-comparison-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 4 : RETARDS DE PAIEMENT
+         ========================================== -->
+    <section class="tab-panel" id="tab-late">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Loyers en retard — Année <span id="late-year-lbl">2026</span></h2>
+            <p class="card-sub">Tout loyer dont la date limite est dépassée avec un reste à payer</p>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Mois concerné</th>
+                <th>N°</th>
+                <th>Locataire & Téléphone</th>
+                <th>Bien & Zone</th>
+                <th>Date limite</th>
+                <th>Retard</th>
+                <th class="num">Loyer dû</th>
+                <th class="num">Déjà versé</th>
+                <th class="num">Reste à payer</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="late-payments-tbody"></tbody>
+            <tfoot id="late-payments-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 5 : JOURNAL DES PAIEMENTS MOBILE MONEY
+         ========================================== -->
+    <section class="tab-panel" id="tab-mobilemoney">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Journal des Paiements Mobile Money</h2>
+            <p class="card-sub">Date de paiement, opérateur, numéro débité, référence de chaque versement et retrait en cas d'erreur de saisie</p>
+          </div>
+          <div class="filter-bar">
+            <select id="mm-filter-provider" class="input-field" onchange="renderMobileMoneyTab()">
+              <option value="all">Tous les opérateurs</option>
+              <option value="Wave">Wave</option>
+              <option value="Orange Money">Orange Money</option>
+              <option value="MTN Mobile Money">MTN Mobile Money</option>
+              <option value="Moov Money">Moov Money</option>
+              <option value="Flooz / TMoney">Flooz / TMoney</option>
+              <option value="Espèces / Virement">Espèces / Virement</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openPaymentModal()">+ Nouveau paiement</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date de paiement</th>
+                <th>Référence</th>
+                <th>N°</th>
+                <th>Locataire & Bien</th>
+                <th>Mois réglé</th>
+                <th>Opérateur</th>
+                <th>Téléphone débité</th>
+                <th class="num">Montant versé</th>
+                <th class="num">Reste sur le mois</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="mm-transactions-tbody"></tbody>
+            <tfoot id="mm-transactions-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="mm-providers-grid" id="mm-providers-cards"></div>
+    </section>
+
+    <!-- ==========================================
+         TAB 6 : RÉPARATIONS À FAIRE
+         ========================================== -->
+    <section class="tab-panel" id="tab-repairs">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Réparations & Travaux</h2>
+            <p class="card-sub">Saisissez les réparations à faire par logement, suivez leur avancement et leur coût</p>
+          </div>
+          <div class="filter-bar">
+            <select id="repair-filter-status" class="input-field" onchange="renderRepairsTab()">
+              <option value="open">À faire + En cours</option>
+              <option value="all">Toutes les réparations</option>
+              <option value="todo">À faire</option>
+              <option value="inprogress">En cours</option>
+              <option value="done">Terminées</option>
+            </select>
+            <select id="repair-filter-zone" class="input-field" onchange="renderRepairsTab()">
+              <option value="all">Toutes les zones</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openRepairModal()">+ Nouvelle réparation</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date signalée</th>
+                <th>N°</th>
+                <th>Bien & Zone</th>
+                <th>Réparation à faire</th>
+                <th>Priorité</th>
+                <th>Prestataire</th>
+                <th class="num">Coût estimé</th>
+                <th class="num">Coût réel</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="repairs-tbody"></tbody>
+            <tfoot id="repairs-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 7 : IMPÔTS TRIMESTRIELS
+         ========================================== -->
+    <section class="tab-panel" id="tab-taxes">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Impôts à payer par Trimestre — Année <span id="tax-year-lbl">2026</span></h2>
+            <p class="card-sub">Montant à payer, déjà payé, reste à payer et intérêts de retard pour chaque trimestre</p>
+          </div>
+          <div class="filter-bar">
+            <div class="rate-box">
+              <label for="tax-rate">Intérêt de retard (% / mois)</label>
+              <input type="number" id="tax-rate" min="0" max="20" step="0.1" />
+              <button class="btn btn-sm btn-ghost" onclick="saveTaxRate()">OK</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="openTaxModal()">+ Ajouter un impôt</button>
+            <button class="btn btn-primary btn-sm" onclick="openTaxPaymentModal()">Enregistrer un paiement</button>
+          </div>
+        </div>
+
+        <div class="info-note" id="tax-rate-note">—</div>
+
+        <div class="quarter-grid" id="tax-quarter-cards"></div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Trimestre</th>
+                <th>Impôt</th>
+                <th>Date limite</th>
+                <th class="num">Montant à payer</th>
+                <th class="num">Déjà payé</th>
+                <th class="num">Reste à payer</th>
+                <th>Retard</th>
+                <th class="num">Intérêts de retard</th>
+                <th class="num">Total à régler</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="taxes-tbody"></tbody>
+            <tfoot id="taxes-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Historique des paiements d'impôts — <span id="tax-hist-year-lbl">2026</span></h3>
+            <p class="card-sub">Tous les versements effectués pour les impôts de l'année</p>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Trimestre</th>
+                <th>Impôt</th>
+                <th>Mode / Référence</th>
+                <th class="num">Montant versé</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="tax-payments-tbody"></tbody>
+            <tfoot id="tax-payments-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         TAB 8 : LOGEMENTS & MONTANTS DES LOYERS
+         ========================================== -->
+    <section class="tab-panel" id="tab-tenants">
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Saisie des Montants des Loyers</h2>
+            <p class="card-sub">Entrez ou modifiez le loyer mensuel de chaque logement, puis cliquez sur « Enregistrer les montants »</p>
+          </div>
+          <div class="filter-bar">
+            <button class="btn btn-primary btn-sm" onclick="saveRentAmounts()">Enregistrer les montants</button>
+          </div>
+        </div>
+        <div class="info-note">
+          Le nouveau montant s'applique à partir du mois indiqué. Les mois précédents conservent l'ancien loyer, ce qui préserve l'historique des restes à payer.
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>N°</th>
+                <th>Bien</th>
+                <th>Zone</th>
+                <th>Locataire</th>
+                <th class="num">Loyer actuel</th>
+                <th class="num">Nouveau montant (FCFA)</th>
+                <th>À partir de</th>
+              </tr>
+            </thead>
+            <tbody id="rent-amounts-tbody"></tbody>
+            <tfoot id="rent-amounts-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header flex-wrap">
+          <div>
+            <h2 class="card-title">Logements, Localisations & Baux</h2>
+            <p class="card-sub">Fiches des logements, localisation, contrats actifs et arrêts de location</p>
+          </div>
+          <div class="filter-bar">
+            <select id="tenant-filter-location" class="input-field" onchange="renderTenantsTab()">
+              <option value="all">Toutes les zones</option>
+            </select>
+            <select id="tenant-filter-state" class="input-field" onchange="renderTenantsTab()">
+              <option value="all">Tous les contrats</option>
+              <option value="active">Locations actives</option>
+              <option value="stopped">Locations arrêtées</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openTenantModal()">+ Ajouter un logement</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetDemoData()">Réinitialiser démo</button>
+          </div>
+        </div>
+        <div class="tenants-cards-grid" id="tenants-cards-grid"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================
+       MODAL : PAIEMENT DE LOYER (MOBILE MONEY)
+       ========================================================= -->
+  <div class="modal-overlay" id="payment-modal" onclick="closeModalOnBg(event, 'payment-modal')">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Encaisser un Loyer</h3>
+          <p class="modal-sub">Choisissez l'opérateur Mobile Money, vérifiez le reste à payer et validez</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('payment-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitPayment(event)">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Logement & Locataire *</label>
+            <select id="pay-tenant" class="input-field" required onchange="onPayTenantChange()"></select>
+          </div>
+          <div class="form-group">
+            <label>Mois de loyer concerné *</label>
+            <input type="month" id="pay-period" class="input-field" required onchange="updatePaymentFormPreview()" />
+          </div>
+        </div>
+
+        <div class="rent-summary-banner">
+          <div><span class="rsb-lbl">Loyer du mois</span><strong id="ps-expected">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Déjà payé</span><strong class="text-green" id="ps-already">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Reste à payer</span><strong class="text-amber" id="ps-remaining">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Reste après paiement</span><strong id="ps-after">0 FCFA</strong></div>
+        </div>
+
+        <div class="form-group">
+          <label>Opérateur Mobile Money *</label>
+          <div class="mm-selector-grid" id="mm-selector-grid">
+            <label class="mm-option selected" data-provider="Orange Money" onclick="selectMMProvider('Orange Money')">
+              <input type="radio" name="mm_provider" value="Orange Money" checked /><span class="mm-dot mm-orange"></span><span>Orange Money</span>
+            </label>
+            <label class="mm-option" data-provider="Wave" onclick="selectMMProvider('Wave')">
+              <input type="radio" name="mm_provider" value="Wave" /><span class="mm-dot mm-wave"></span><span>Wave</span>
+            </label>
+            <label class="mm-option" data-provider="MTN Mobile Money" onclick="selectMMProvider('MTN Mobile Money')">
+              <input type="radio" name="mm_provider" value="MTN Mobile Money" /><span class="mm-dot mm-mtn"></span><span>MTN MoMo</span>
+            </label>
+            <label class="mm-option" data-provider="Moov Money" onclick="selectMMProvider('Moov Money')">
+              <input type="radio" name="mm_provider" value="Moov Money" /><span class="mm-dot mm-moov"></span><span>Moov Money</span>
+            </label>
+            <label class="mm-option" data-provider="Flooz / TMoney" onclick="selectMMProvider('Flooz / TMoney')">
+              <input type="radio" name="mm_provider" value="Flooz / TMoney" /><span class="mm-dot mm-flooz"></span><span>Flooz / TMoney</span>
+            </label>
+            <label class="mm-option" data-provider="Espèces / Virement" onclick="selectMMProvider('Espèces / Virement')">
+              <input type="radio" name="mm_provider" value="Espèces / Virement" /><span class="mm-dot mm-cash"></span><span>Espèces / Virement</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>Montant versé (FCFA) *</label>
+            <input type="number" id="pay-amount" class="input-field" min="1" required oninput="updatePaymentFormPreview()" />
+          </div>
+          <div class="form-group">
+            <label>Date de paiement *</label>
+            <input type="date" id="pay-date" class="input-field" required />
+          </div>
+          <div class="form-group">
+            <label>N° Téléphone débité</label>
+            <input type="text" id="pay-phone" class="input-field" placeholder="ex: +225 07 08 09 10 11" />
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Référence transaction</label>
+            <input type="text" id="pay-ref" class="input-field" placeholder="Générée automatiquement si vide" />
+          </div>
+          <div class="form-group">
+            <label>Note</label>
+            <input type="text" id="pay-note" class="input-field" placeholder="ex: Acompte, solde..." />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('payment-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Valider le paiement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : LOGEMENT & LOCATAIRE
+       ========================================================= -->
+  <div class="modal-overlay" id="tenant-modal" onclick="closeModalOnBg(event, 'tenant-modal')">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="tenant-modal-title">Nouveau Logement</h3>
+          <p class="modal-sub">N° de logement, localisation, locataire et conditions du bail</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('tenant-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitTenant(event)">
+        <input type="hidden" id="ten-id" />
+
+        <div class="form-section-title">1. Logement & Localisation</div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>N° Logement *</label>
+            <input type="text" id="ten-unit-no" class="input-field" placeholder="ex: A1, B4, Villa 12" required />
+          </div>
+          <div class="form-group">
+            <label>Désignation du bien *</label>
+            <input type="text" id="ten-unit" class="input-field" placeholder="ex: Appt 3 pièces — Résidence Riviera" required />
+          </div>
+          <div class="form-group">
+            <label>Zone (Ville / Commune) *</label>
+            <input type="text" id="ten-city" class="input-field" list="zones-datalist" placeholder="ex: Abidjan — Cocody" required />
+            <datalist id="zones-datalist"></datalist>
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Quartier, rue & repère</label>
+            <input type="text" id="ten-address" class="input-field" placeholder="ex: Riviera Palmeraie, près de la pharmacie" />
+          </div>
+          <div class="form-group">
+            <label>Lien Google Maps ou coordonnées GPS</label>
+            <input type="text" id="ten-gps" class="input-field" placeholder="ex: 5.3689, -3.9582" />
+          </div>
+        </div>
+
+        <div class="form-section-title">2. Locataire</div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>Nom du locataire *</label>
+            <input type="text" id="ten-name" class="input-field" placeholder="ex: Kouamé Jean-Marc" required />
+          </div>
+          <div class="form-group">
+            <label>Téléphone (si disponible)</label>
+            <input type="text" id="ten-phone" class="input-field" placeholder="ex: +225 07 45 12 89 00" />
+          </div>
+          <div class="form-group">
+            <label>Opérateur Mobile Money préféré</label>
+            <select id="ten-pref-mm" class="input-field">
+              <option value="Orange Money">Orange Money</option>
+              <option value="Wave">Wave</option>
+              <option value="MTN Mobile Money">MTN Mobile Money</option>
+              <option value="Moov Money">Moov Money</option>
+              <option value="Flooz / TMoney">Flooz / TMoney</option>
+              <option value="Espèces / Virement">Espèces / Virement</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-section-title">3. Loyer & Bail</div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>Loyer mensuel (FCFA) *</label>
+            <input type="number" id="ten-rent" class="input-field" min="0" step="500" placeholder="150000" required />
+          </div>
+          <div class="form-group">
+            <label>Loyer applicable à partir de</label>
+            <input type="month" id="ten-rent-from" class="input-field" />
+          </div>
+          <div class="form-group">
+            <label>Jour limite de paiement (1-28) *</label>
+            <input type="number" id="ten-due-day" class="input-field" min="1" max="28" value="5" required />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Caution versée (FCFA)</label>
+            <input type="number" id="ten-deposit" class="input-field" min="0" step="500" />
+          </div>
+          <div class="form-group">
+            <label>Date d'entrée *</label>
+            <input type="date" id="ten-start-date" class="input-field" required />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('tenant-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : RÉPARATION
+       ========================================================= -->
+  <div class="modal-overlay" id="repair-modal" onclick="closeModalOnBg(event, 'repair-modal')">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="repair-modal-title">Nouvelle Réparation</h3>
+          <p class="modal-sub">Logement concerné, travaux à effectuer, priorité et coût</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('repair-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitRepair(event)">
+        <input type="hidden" id="rep-id" />
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Logement concerné *</label>
+            <select id="rep-tenant" class="input-field" required></select>
+          </div>
+          <div class="form-group">
+            <label>Réparation à faire *</label>
+            <input type="text" id="rep-title" class="input-field" placeholder="ex: Fuite robinet cuisine, peinture, climatiseur..." required />
+          </div>
+        </div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>Priorité</label>
+            <select id="rep-priority" class="input-field">
+              <option value="haute">Haute (urgent)</option>
+              <option value="moyenne" selected>Moyenne</option>
+              <option value="basse">Basse</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Statut</label>
+            <select id="rep-status" class="input-field">
+              <option value="todo">À faire</option>
+              <option value="inprogress">En cours</option>
+              <option value="done">Terminée</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Date signalée *</label>
+            <input type="date" id="rep-date" class="input-field" required />
+          </div>
+        </div>
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label>Coût estimé (FCFA)</label>
+            <input type="number" id="rep-estimated" class="input-field" min="0" step="500" />
+          </div>
+          <div class="form-group">
+            <label>Coût réel (FCFA)</label>
+            <input type="number" id="rep-actual" class="input-field" min="0" step="500" />
+          </div>
+          <div class="form-group">
+            <label>Prestataire / Artisan</label>
+            <input type="text" id="rep-contractor" class="input-field" placeholder="ex: Plombier M. Traoré" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Détails / Observations</label>
+          <input type="text" id="rep-notes" class="input-field" placeholder="ex: Pièce à commander, accès le matin..." />
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('repair-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer la réparation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : IMPÔT (AJOUT / MODIFICATION)
+       ========================================================= -->
+  <div class="modal-overlay" id="tax-modal" onclick="closeModalOnBg(event, 'tax-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title" id="tax-modal-title">Ajouter un Impôt Trimestriel</h3>
+          <p class="modal-sub">Montant à payer et date limite du trimestre</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('tax-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitTax(event)">
+        <input type="hidden" id="tax-id" />
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Année *</label>
+            <input type="number" id="tax-year" class="input-field" min="2000" max="2100" required onchange="updateTaxDueDefault()" />
+          </div>
+          <div class="form-group">
+            <label>Trimestre *</label>
+            <select id="tax-quarter" class="input-field" required onchange="updateTaxDueDefault()">
+              <option value="1">T1 (Janvier – Mars)</option>
+              <option value="2">T2 (Avril – Juin)</option>
+              <option value="3">T3 (Juillet – Septembre)</option>
+              <option value="4">T4 (Octobre – Décembre)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Impôt / Libellé *</label>
+          <input type="text" id="tax-label" class="input-field" list="tax-labels" placeholder="ex: Impôt sur le revenu foncier" required />
+          <datalist id="tax-labels">
+            <option value="Impôt sur le revenu foncier"></option>
+            <option value="Impôt foncier"></option>
+            <option value="Taxe d'enlèvement des ordures"></option>
+            <option value="Patente / Contribution des patentes"></option>
+          </datalist>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Montant à payer (FCFA) *</label>
+            <input type="number" id="tax-amount" class="input-field" min="0" step="500" required />
+          </div>
+          <div class="form-group">
+            <label>Date limite de paiement *</label>
+            <input type="date" id="tax-due" class="input-field" required />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('tax-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer l'impôt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : PAIEMENT D'IMPÔT
+       ========================================================= -->
+  <div class="modal-overlay" id="tax-payment-modal" onclick="closeModalOnBg(event, 'tax-payment-modal')">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Enregistrer un Paiement d'Impôt</h3>
+          <p class="modal-sub">Le paiement règle d'abord le montant principal, puis les intérêts de retard</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('tax-payment-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitTaxPayment(event)">
+        <div class="form-group">
+          <label>Impôt concerné *</label>
+          <select id="taxpay-tax" class="input-field" required onchange="updateTaxPaymentPreview(true)"></select>
+        </div>
+
+        <div class="rent-summary-banner">
+          <div><span class="rsb-lbl">Montant à payer</span><strong id="tps-amount">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Déjà payé</span><strong class="text-green" id="tps-paid">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Intérêts de retard dus</span><strong class="text-red" id="tps-interest">0 FCFA</strong></div>
+          <div><span class="rsb-lbl">Total à régler</span><strong class="text-amber" id="tps-total">0 FCFA</strong></div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Montant versé (FCFA) *</label>
+            <input type="number" id="taxpay-amount" class="input-field" min="1" required />
+          </div>
+          <div class="form-group">
+            <label>Date du paiement *</label>
+            <input type="date" id="taxpay-date" class="input-field" required />
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label>Mode de paiement</label>
+            <select id="taxpay-mode" class="input-field">
+              <option value="Virement bancaire">Virement bancaire</option>
+              <option value="Mobile Money">Mobile Money</option>
+              <option value="Espèces">Espèces</option>
+              <option value="Chèque">Chèque</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Référence / N° de quittance fiscale</label>
+            <input type="text" id="taxpay-ref" class="input-field" placeholder="ex: DGI-2026-T3-00451" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('tax-payment-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Valider le paiement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : ARRÊT DE LOCATION
+       ========================================================= -->
+  <div class="modal-overlay" id="stop-lease-modal" onclick="closeModalOnBg(event, 'stop-lease-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Arrêt de Location</h3>
+          <p class="modal-sub">Aucun loyer ne sera facturé après cette date ; l'historique est conservé</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('stop-lease-modal')">✕</button>
+      </div>
+
+      <form onsubmit="submitStopLease(event)">
+        <input type="hidden" id="stop-tenant-id" />
+        <div class="stop-lease-summary" id="stop-lease-summary"></div>
+        <div class="form-group">
+          <label>Date d'arrêt de la location *</label>
+          <input type="date" id="stop-date" class="input-field" required />
+        </div>
+        <div class="form-group">
+          <label>Motif *</label>
+          <select id="stop-reason" class="input-field" required>
+            <option value="Fin de contrat normale (Préavis respecté)">Fin de contrat normale (Préavis respecté)</option>
+            <option value="Départ anticipé à l'amiable">Départ anticipé à l'amiable</option>
+            <option value="Résiliation pour impayés / retards répétés">Résiliation pour impayés / retards répétés</option>
+            <option value="Travaux / Réhabilitation du bien">Travaux / Réhabilitation du bien</option>
+            <option value="Autre motif">Autre motif</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Commentaire / État des lieux</label>
+          <input type="text" id="stop-notes" class="input-field" placeholder="ex: Clés remises, retenue pour peinture..." />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('stop-lease-modal')">Annuler</button>
+          <button type="submit" class="btn btn-danger">Confirmer l'arrêt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : QUITTANCE / RELANCE
+       ========================================================= -->
+  <div class="modal-overlay" id="receipt-modal" onclick="closeModalOnBg(event, 'receipt-modal')">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div><h3 class="modal-title" id="receipt-modal-title">Quittance</h3></div>
+        <button class="modal-close" onclick="closeModal('receipt-modal')">✕</button>
+      </div>
+      <div id="receipt-modal-body" class="receipt-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('receipt-modal')">Fermer</button>
+        <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer / PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTENEUR DE NOTIFICATIONS -->
+  <div id="wave-toast-container" class="wave-toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
