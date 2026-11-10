@@ -24,3 +24,4 @@ Desktop.ini
 *.tmp
 .agents/
 security-audit-reports/
+jeko-webhooks.json

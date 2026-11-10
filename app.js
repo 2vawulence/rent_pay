@@ -578,7 +578,8 @@ function createSeedData() {
     settings: {
       taxLateRate: 1.0,
       waveReceiverPhone: '0705180954',
-      waveMerchantName: 'Rent Pay — Gestion Locative'
+      waveMerchantName: 'Ahyi Rent',
+      jekoPaymentLink: 'https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b'
     }
   };
 }
@@ -600,9 +601,13 @@ function loadDB() {
     db.settings = {
       taxLateRate: 1.5,
       waveReceiverPhone: '0705180954',
-      waveMerchantName: 'Rent Pay — Gestion Locative',
+      waveMerchantName: 'Ahyi Rent',
+      jekoPaymentLink: 'https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b',
       ...(db.settings || {})
     };
+    if (!db.settings.jekoPaymentLink) {
+      db.settings.jekoPaymentLink = 'https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b';
+    }
     delete db.settings.waveApiKey;
     delete db.settings.waveWebhookSecret;
     db.tenants.forEach(t => {
@@ -907,7 +912,8 @@ function renderZoneRecap(db) {
           <td>${(r.remaining > 0 && t.status === 'active') || r.paid > 0
             ? `<div style="display:flex; gap:5px; flex-wrap:wrap;">
                  ${r.remaining > 0 && t.status === 'active'
-                   ? `<button class="btn btn-sm btn-primary" onclick="openPaymentModal('${esc(t.id)}', '${getSelectedPeriodKey()}')">Encaisser</button>`
+                   ? `<button class="btn btn-sm btn-primary" onclick="openJekoModal('${esc(t.id)}', '${getSelectedPeriodKey()}')">🔗 Jèko</button>
+                      <button class="btn btn-sm btn-secondary" onclick="openPaymentModal('${esc(t.id)}', '${getSelectedPeriodKey()}')">Encaisser</button>`
                    : ''}
                  ${r.paid > 0
                    ? `<button class="btn btn-sm btn-danger" title="Retirer un paiement en cas d'erreur de saisie" onclick="deleteLastRentPaymentForMonth('${esc(t.id)}', '${getSelectedPeriodKey()}')">✕ Retirer paiement</button>`
@@ -1083,7 +1089,8 @@ function renderRentsTable() {
       <td>${renderStatusBadge(r)}</td>
       <td>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          ${r.active && r.remaining > 0 ? `<button class="btn btn-sm btn-primary" onclick="openPaymentModal('${esc(r.tenant.id)}', '${ym}')">Encaisser</button>` : ''}
+          ${r.active && r.remaining > 0 ? `<button class="btn btn-sm btn-primary" onclick="openJekoModal('${esc(r.tenant.id)}', '${ym}')">🔗 Jèko</button>` : ''}
+          ${r.active && r.remaining > 0 ? `<button class="btn btn-sm btn-secondary" onclick="openPaymentModal('${esc(r.tenant.id)}', '${ym}')">Encaisser</button>` : ''}
           ${r.paid > 0 ? `<button class="btn btn-sm btn-ghost" onclick="openReceiptForMonth('${esc(r.tenant.id)}', '${ym}')">Quittance</button>` : ''}
           ${r.paid > 0 ? `<button class="btn btn-sm btn-danger" title="Retirer un paiement en cas d'erreur de saisie" onclick="deleteLastRentPaymentForMonth('${esc(r.tenant.id)}', '${ym}')">✕ Retirer</button>` : ''}
         </div>
@@ -1192,7 +1199,8 @@ function renderLateTab(db) {
       <td class="num text-red"><strong>${fmtCFA(r.remaining)}</strong></td>
       <td>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-          <button class="btn btn-sm btn-primary" onclick="openPaymentModal('${esc(r.tenant.id)}', '${r.ym}')">Régulariser</button>
+          <button class="btn btn-sm btn-primary" onclick="openJekoModal('${esc(r.tenant.id)}', '${r.ym}')">🔗 Lien &amp; QR Jèko</button>
+          <button class="btn btn-sm btn-secondary" onclick="openPaymentModal('${esc(r.tenant.id)}', '${r.ym}')">Régulariser</button>
           <button class="btn btn-sm btn-ghost" onclick="openReminderModal('${esc(r.tenant.id)}', '${r.ym}')">Relancer</button>
         </div>
       </td>
@@ -1718,8 +1726,9 @@ function renderTenantsTab() {
           </div>`}
 
         <div class="tc-actions">
-          ${t.status === 'active' ? `<button class="btn btn-sm btn-primary" onclick="openPaymentModal('${t.id}', '${ym}')">Encaisser</button>` : ''}
-          <button class="btn btn-sm btn-secondary" onclick="openTenantModal('${t.id}')">Modifier</button>
+          ${t.status === 'active' ? `<button class="btn btn-sm btn-primary" onclick="openJekoModal('${t.id}', '${ym}')">🔗 Lien &amp; QR Jèko</button>` : ''}
+          ${t.status === 'active' ? `<button class="btn btn-sm btn-secondary" onclick="openPaymentModal('${t.id}', '${ym}')">Encaisser</button>` : ''}
+          <button class="btn btn-sm btn-ghost" onclick="openTenantModal('${t.id}')">Modifier</button>
           <button class="btn btn-sm btn-ghost" onclick="openRepairModal(null, '${t.id}')">+ Réparation</button>
           ${t.status === 'active'
             ? `<button class="btn btn-sm btn-danger" onclick="openStopLeaseModal('${t.id}')">Arrêter location</button>`
@@ -1945,14 +1954,273 @@ function openReminderModal(tenantId, ym) {
   const t = db.tenants.find(x => x.id === tenantId);
   if (!t) return;
   const st = computeTenantMonthStatus(db, t, ym);
-  const wavePhone = formatWavePhoneDisplay(db.settings?.waveReceiverPhone || '0705180954');
-  const msg = `Bonjour ${t.name},\n\nSauf erreur de notre part, votre loyer de ${fmtPeriodLabel(ym)} pour le logement N° ${t.unitNo || '—'} (${t.unit}, ${t.city}), dont la date limite était le ${fmtDateFR(st.dueDate)}, présente un reste à payer de ${fmtCFA(st.remaining)} (${st.daysLate} jours de retard).\n\nMerci de régulariser votre loyer via Wave au numéro ${wavePhone} (0705180954) ou par Mobile Money.\n\nCordialement,\nLa Gestion Rent Pay.`;
+  const jekoLink = db.settings?.jekoPaymentLink || 'https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b';
+  const msg = `Bonjour ${t.name},\n\nSauf erreur de notre part, votre loyer de ${fmtPeriodLabel(ym)} pour le logement N° ${t.unitNo || '—'} (${t.unit}, ${t.city}), dont la date limite était le ${fmtDateFR(st.dueDate)}, présente un reste à payer de ${fmtCFA(st.remaining)} (${st.daysLate} jours de retard).\n\nVeuillez payer pour Ahyi Rent (Wave ou Orange Money) en cliquant sur le lien :\n${jekoLink}\n\nCordialement,\nAhyi Rent — Gestion Rent Pay.`;
 
-  document.getElementById('receipt-modal-title').textContent = 'Message de Relance';
+  document.getElementById('receipt-modal-title').textContent = 'Message de Relance (Jèko — Ahyi Rent)';
   document.getElementById('receipt-modal-body').innerHTML = `
     <p class="text-muted" style="margin-bottom:10px;">${t.phone ? `Message à envoyer au <strong>${esc(t.phone)}</strong> :` : 'Téléphone non renseigné — message à remettre au locataire :'}</p>
-    <textarea class="input-field" style="min-height:180px; line-height:1.6;" readonly>${esc(msg)}</textarea>`;
+    <textarea class="input-field" style="min-height:180px; line-height:1.6;" readonly>${esc(msg)}</textarea>
+    <div style="margin-top:10px; display:flex; gap:8px;">
+      <button type="button" class="btn btn-sm btn-primary" onclick="closeModal('receipt-modal'); openJekoModal('${esc(t.id)}', '${esc(ym)}')">🔗 Ouvrir Lien &amp; QR Jèko</button>
+    </div>`;
   document.getElementById('receipt-modal').classList.add('open');
+}
+
+/* ── JÈKO (Ahyi Rent) : LIEN WHATSAPP, QR CODE SVG & WEBHOOK ── */
+const JEKO_DEFAULT_LINK = 'https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b';
+
+function generateQRSvg(text) {
+  try {
+    const bytes = Array.from(new TextEncoder().encode(text || JEKO_DEFAULT_LINK));
+    const VERS = [
+      null,
+      { v: 1, dc: 19, ec: 7, align: [] },
+      { v: 2, dc: 34, ec: 10, align: [6, 18] },
+      { v: 3, dc: 55, ec: 15, align: [6, 22] },
+      { v: 4, dc: 80, ec: 20, align: [6, 26] },
+      { v: 5, dc: 108, ec: 26, align: [6, 30] },
+      { v: 6, dc: 136, ec: 36, align: [6, 34] }
+    ];
+    const info = VERS.find(x => x && x.dc - 2 >= bytes.length) || VERS[5];
+    const size = 17 + info.v * 4;
+    const bits = [];
+    const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+    pushBits(0b0100, 4);
+    pushBits(bytes.length, 8);
+    bytes.forEach(b => pushBits(b, 8));
+    for (let i = 0; i < 4 && bits.length < info.dc * 8; i++) bits.push(0);
+    while (bits.length % 8 !== 0) bits.push(0);
+    const cw = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      let b = 0;
+      for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+      cw.push(b);
+    }
+    let padIdx = 0;
+    while (cw.length < info.dc) cw.push((padIdx++ % 2 === 0) ? 0xEC : 0x11);
+
+    const exp = new Uint8Array(512), log = new Uint8Array(256);
+    let x = 1;
+    for (let i = 0; i < 255; i++) { exp[i] = x; log[x] = i; x = (x << 1) ^ ((x & 0x80) ? 0x11d : 0); }
+    for (let i = 255; i < 512; i++) exp[i] = exp[i - 255];
+    const mul = (a, b) => (a && b) ? exp[log[a] + log[b]] : 0;
+    let poly = [1];
+    for (let i = 0; i < info.ec; i++) {
+      const next = new Array(poly.length + 1).fill(0);
+      for (let j = 0; j < poly.length; j++) {
+        next[j] ^= poly[j];
+        next[j + 1] ^= mul(poly[j], exp[i]);
+      }
+      poly = next;
+    }
+    const rem = new Array(info.ec).fill(0);
+    cw.forEach(b => {
+      const factor = b ^ rem.shift();
+      rem.push(0);
+      for (let j = 0; j < info.ec; j++) rem[j] ^= mul(poly[j + 1], factor);
+    });
+    const allCw = cw.concat(rem);
+
+    const grid = Array.from({ length: size }, () => new Int8Array(size).fill(-1));
+    const reserved = Array.from({ length: size }, () => new Uint8Array(size));
+    const setMod = (r, c, v) => {
+      if (r >= 0 && r < size && c >= 0 && c < size) {
+        grid[r][c] = v ? 1 : 0;
+        reserved[r][c] = 1;
+      }
+    };
+    const placeFinder = (tr, tc) => {
+      for (let r = -1; r <= 7; r++) {
+        for (let c = -1; c <= 7; c++) {
+          const inOuter = r >= 0 && r <= 6 && c >= 0 && c <= 6;
+          const onBorder = r === 0 || r === 6 || c === 0 || c === 6;
+          const inInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+          setMod(tr + r, tc + c, inOuter && (onBorder || inInner));
+        }
+      }
+    };
+    placeFinder(0, 0);
+    placeFinder(0, size - 7);
+    placeFinder(size - 7, 0);
+
+    for (let i = 8; i < size - 8; i++) {
+      setMod(6, i, i % 2 === 0);
+      setMod(i, 6, i % 2 === 0);
+    }
+
+    if (info.align.length) {
+      for (const ar of info.align) {
+        for (const ac of info.align) {
+          if (reserved[ar][ac]) continue;
+          for (let r = -2; r <= 2; r++) {
+            for (let c = -2; c <= 2; c++) {
+              setMod(ar + r, ac + c, Math.max(Math.abs(r), Math.abs(c)) !== 1);
+            }
+          }
+        }
+      }
+    }
+
+    setMod(size - 8, 8, 1);
+    for (let i = 0; i < 9; i++) {
+      if (i !== 6) { reserved[8][i] = 1; reserved[i][8] = 1; }
+    }
+    for (let i = 0; i < 8; i++) {
+      reserved[8][size - 1 - i] = 1;
+      reserved[size - 1 - i][8] = 1;
+    }
+
+    const dataBits = [];
+    allCw.forEach(b => { for (let i = 7; i >= 0; i--) dataBits.push((b >> i) & 1); });
+
+    let bitIdx = 0, up = true;
+    for (let col = size - 1; col >= 1; col -= 2) {
+      if (col === 6) col--;
+      for (let step = 0; step < size; step++) {
+        const r = up ? (size - 1 - step) : step;
+        for (let dc = 0; dc < 2; dc++) {
+          const c = col - dc;
+          if (!reserved[r][c]) {
+            const bit = bitIdx < dataBits.length ? dataBits[bitIdx++] : 0;
+            grid[r][c] = bit ^ ((r + c) % 2 === 0 ? 1 : 0);
+          }
+        }
+      }
+      up = !up;
+    }
+
+    // Format string for ECC L (01) + Mask 0 (000) = 0x77c4
+    const fmt = 0x77c4;
+    const f1 = [[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
+    const f2 = [[size-1,8],[size-2,8],[size-3,8],[size-4,8],[size-5,8],[size-6,8],[size-7,8],[8,size-8],[8,size-7],[8,size-6],[8,size-5],[8,size-4],[8,size-3],[8,size-2],[8,size-1]];
+    for (let i = 0; i < 15; i++) {
+      const bit = (fmt >> (14 - i)) & 1;
+      grid[f1[i][0]][f1[i][1]] = bit;
+      grid[f2[i][0]][f2[i][1]] = bit;
+    }
+
+    let rects = '';
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (grid[r][c] === 1) rects += `<rect x="${c + 2}" y="${r + 2}" width="1" height="1"/>`;
+      }
+    }
+    const view = size + 4;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${view} ${view}" width="154" height="154" shape-rendering="crispEdges"><rect width="${view}" height="${view}" fill="#ffffff"/><g fill="#081c33">${rects}</g></svg>`;
+  } catch (e) {
+    return '<span class="text-muted">QR indisponible</span>';
+  }
+}
+
+function openJekoModal(tenantId = null, ym = null) {
+  const db = loadDB();
+  const list = db.tenants
+    .filter(t => t.status === 'active' || t.id === tenantId)
+    .sort((a, b) => (a.city || '').localeCompare(b.city || '') || (a.unitNo || '').localeCompare(b.unitNo || '', 'fr', { numeric: true }));
+  if (!list.length) return;
+
+  const targetId = tenantId || list[0].id;
+  document.getElementById('jeko-tenant').innerHTML = list.map(t =>
+    `<option value="${t.id}" ${t.id === targetId ? 'selected' : ''}>${esc(tenantOptionLabel(t))}</option>`
+  ).join('');
+  document.getElementById('jeko-period').value = ym || getSelectedPeriodKey();
+  const linkInput = document.getElementById('jeko-link-input');
+  if (linkInput) linkInput.value = db.settings?.jekoPaymentLink || JEKO_DEFAULT_LINK;
+
+  updateJekoModalPreview();
+  checkJekoWebhookServer();
+  document.getElementById('jeko-modal').classList.add('open');
+}
+
+function onJekoLinkInput() {
+  const db = loadDB();
+  const val = (document.getElementById('jeko-link-input')?.value || '').trim() || JEKO_DEFAULT_LINK;
+  db.settings.jekoPaymentLink = val;
+  saveDB(db);
+  updateJekoModalPreview();
+}
+
+function updateJekoModalPreview() {
+  const db = loadDB();
+  const tid = document.getElementById('jeko-tenant')?.value;
+  const ym = document.getElementById('jeko-period')?.value || getSelectedPeriodKey();
+  const network = document.getElementById('jeko-network')?.value || 'Wave & Orange Money';
+  const link = (document.getElementById('jeko-link-input')?.value || db.settings?.jekoPaymentLink || JEKO_DEFAULT_LINK).trim();
+
+  const t = db.tenants.find(x => x.id === tid);
+  if (!t) return;
+  const st = computeTenantMonthStatus(db, t, ym);
+  const amountToPay = st.remaining > 0 ? st.remaining : st.expected;
+
+  document.getElementById('jeko-expected').textContent = fmtCFA(st.expected);
+  document.getElementById('jeko-paid').textContent = fmtCFA(st.paid);
+  document.getElementById('jeko-remaining').textContent = fmtCFA(st.remaining);
+  document.getElementById('jeko-phone-display').textContent = t.phone || 'Non renseigné';
+
+  const qrBox = document.getElementById('jeko-qr-box');
+  if (qrBox) qrBox.innerHTML = generateQRSvg(link);
+
+  const openBtn = document.getElementById('jeko-open-link-btn');
+  if (openBtn && /^https?:\/\//i.test(link)) openBtn.href = link;
+
+  const msg = `Bonjour ${t.name},\n\nVoici votre avis de loyer (${fmtPeriodLabel(ym)}) pour le logement ${t.unitNo ? t.unitNo + ' — ' : ''}${t.unit} (${t.city}) :\n• Montant à régler : ${fmtCFA(amountToPay)}\n• Réseau : ${network}\n\nVeuillez payer pour Ahyi Rent en cliquant sur le lien :\n${link}\n\nMerci de nous envoyer la capture de confirmation après le paiement.`;
+  const msgBox = document.getElementById('jeko-msg-box');
+  if (msgBox) msgBox.value = msg;
+}
+
+function copyJekoLinkOnly() {
+  const link = document.getElementById('jeko-link-input')?.value || JEKO_DEFAULT_LINK;
+  navigator.clipboard?.writeText(link);
+  showNotificationToast('Lien Jèko copié', link);
+}
+
+function copyJekoFullMessage() {
+  const msg = document.getElementById('jeko-msg-box')?.value || '';
+  navigator.clipboard?.writeText(msg);
+  showNotificationToast('Message Jèko copié', 'Vous pouvez le coller dans WhatsApp ou par SMS.');
+}
+
+function sendJekoWhatsApp() {
+  const db = loadDB();
+  const tid = document.getElementById('jeko-tenant')?.value;
+  const t = db.tenants.find(x => x.id === tid);
+  const msg = document.getElementById('jeko-msg-box')?.value || '';
+  let digits = String(t?.phone || '').replace(/\D/g, '');
+  if (digits.length === 10 && !digits.startsWith('225')) digits = '225' + digits;
+  const waUrl = digits
+    ? `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(waUrl, '_blank', 'noopener,noreferrer');
+}
+
+function confirmFromJekoModal() {
+  const tid = document.getElementById('jeko-tenant')?.value;
+  const ym = document.getElementById('jeko-period')?.value || getSelectedPeriodKey();
+  closeModal('jeko-modal');
+  openPaymentModal(tid, ym);
+}
+
+async function checkJekoWebhookServer() {
+  const badge = document.getElementById('jeko-webhook-status-badge');
+  const box = document.getElementById('jeko-webhook-events-box');
+  if (!badge || !box) return;
+  try {
+    const res = await fetch('/api/jeko/webhooks', { cache: 'no-store' });
+    if (!res.ok) throw new Error('offline');
+    const data = await res.json();
+    badge.className = 'badge badge-paid';
+    badge.textContent = `Serveur Webhook Actif (${(data.events || []).length} reçu(s))`;
+    if (data.events && data.events.length > 0) {
+      const latest = data.events[0];
+      box.textContent = `Dernier événement Jèko : ${latest.event || 'TRANSACTION'} (${latest.receivedAt}) — Statut : ${latest.status || 'reçu'}`;
+    } else {
+      box.textContent = `Endpoint prêt : POST /webhooks/jeko (Vérification HMAC-SHA256 Jeko-Signature active). Aucun événement reçu pour l'instant.`;
+    }
+  } catch (e) {
+    badge.className = 'badge badge-partial';
+    badge.textContent = 'Mode Statique (Méthode 1 Active)';
+  }
 }
 
 /* ── RETRAIT / SUPPRESSION D'UN PAIEMENT DE LOYER (ERREUR DE SAISIE) ── */

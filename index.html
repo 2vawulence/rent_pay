@@ -40,7 +40,8 @@
         </div>
 
         <div class="owner-actions-group">
-          <button class="btn btn-primary" onclick="openPaymentModal()">Encaisser un loyer</button>
+          <button class="btn btn-primary" onclick="openJekoModal()">🔗 Lien &amp; QR Jèko</button>
+          <button class="btn btn-secondary" onclick="openPaymentModal()">Encaisser un loyer</button>
           <button class="btn btn-secondary" onclick="openTenantModal()">+ Logement</button>
           <button class="btn btn-secondary" onclick="openRepairModal()">+ Réparation</button>
         </div>
@@ -986,6 +987,94 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" onclick="closeModal('receipt-modal')">Fermer</button>
         <button type="button" class="btn btn-primary" onclick="window.print()">Imprimer / PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODAL : PAIEMENT JÈKO (Ahyi Rent — Lien WhatsApp, QR Code & Webhook)
+       ========================================================= -->
+  <div class="modal-overlay" id="jeko-modal" onclick="closeModalOnBg(event, 'jeko-modal')">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Paiement Jèko — Ahyi Rent (Wave &amp; Orange Money)</h3>
+          <p class="modal-sub">Méthode 1 : Lien &amp; QR Code WhatsApp · Méthode 2 : Webhook temps réel (/webhooks/jeko)</p>
+        </div>
+        <button class="modal-close" onclick="closeModal('jeko-modal')">✕</button>
+      </div>
+
+      <div class="form-grid-3">
+        <div class="form-group">
+          <label for="jeko-tenant">Logement &amp; Locataire</label>
+          <select id="jeko-tenant" class="input-field" onchange="updateJekoModalPreview()"></select>
+        </div>
+        <div class="form-group">
+          <label for="jeko-period">Mois de loyer</label>
+          <input type="month" id="jeko-period" class="input-field" onchange="updateJekoModalPreview()" />
+        </div>
+        <div class="form-group">
+          <label for="jeko-network">Réseau recommandé au locataire</label>
+          <select id="jeko-network" class="input-field" onchange="updateJekoModalPreview()">
+            <option value="Wave & Orange Money">Wave &amp; Orange Money (Au choix)</option>
+            <option value="Wave">Wave uniquement</option>
+            <option value="Orange Money">Orange Money uniquement</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rent-summary-banner">
+        <div><span class="rsb-lbl">Loyer du mois</span><strong id="jeko-expected">0 FCFA</strong></div>
+        <div><span class="rsb-lbl">Déjà payé</span><strong class="text-green" id="jeko-paid">0 FCFA</strong></div>
+        <div><span class="rsb-lbl">Reste à payer</span><strong class="text-amber" id="jeko-remaining">0 FCFA</strong></div>
+        <div><span class="rsb-lbl">Téléphone locataire</span><strong id="jeko-phone-display">—</strong></div>
+      </div>
+
+      <div class="form-grid-2" style="align-items: start; margin-bottom: 14px;">
+        <div style="background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center;">
+          <div style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px;">
+            QR Code Jèko — Ahyi Rent
+          </div>
+          <div id="jeko-qr-box" style="width: 176px; height: 176px; margin: 0 auto 8px; background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; align-items: center; justify-content: center;"></div>
+          <div style="font-size: 0.74rem; color: var(--text-secondary); font-weight: 500;">Scannez pour payer par Wave ou Orange Money</div>
+        </div>
+
+        <div>
+          <div class="form-group">
+            <label for="jeko-link-input">Lien de paiement officiel Jèko (Ahyi Rent)</label>
+            <div style="display: flex; gap: 6px;">
+              <input type="url" id="jeko-link-input" class="input-field" value="https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b" oninput="onJekoLinkInput()" />
+              <button type="button" class="btn btn-sm btn-secondary" onclick="copyJekoLinkOnly()">Copier lien</button>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label for="jeko-msg-box">Message d'appel de loyer prêt à envoyer (WhatsApp / SMS)</label>
+            <textarea id="jeko-msg-box" class="input-field" style="min-height: 112px; line-height: 1.5; font-size: 0.79rem;" readonly></textarea>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="sendJekoWhatsApp()">📲 Envoyer sur WhatsApp</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyJekoFullMessage()">📋 Copier le message</button>
+            <a id="jeko-open-link-btn" class="btn btn-ghost btn-sm" href="https://pay.jeko.africa/pl/7932bfdd-fef8-4626-89f1-2939dff6160b" target="_blank" rel="noopener noreferrer" style="text-decoration: none;">🌐 Ouvrir la page Jèko ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- MÉTHODE 2 : WEBHOOK JÈKO -->
+      <div class="info-note" style="margin-bottom: 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
+          <strong>Méthode 2 — Réception automatique Webhook Jèko (<code>/webhooks/jeko</code>)</strong>
+          <span class="badge badge-pending" id="jeko-webhook-status-badge">Vérification serveur...</span>
+        </div>
+        <div id="jeko-webhook-events-box" style="font-size: 0.74rem; color: var(--text-muted);">
+          Lorsque le serveur local (<code>node server.js</code>) est actif, les notifications Jèko signées (<code>Jeko-Signature</code>) s'affichent automatiquement ici.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('jeko-modal')">Fermer</button>
+        <button type="button" class="btn btn-primary" onclick="confirmFromJekoModal()">✅ Enregistrer ce loyer comme payé</button>
       </div>
     </div>
   </div>
